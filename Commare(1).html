@@ -1,0 +1,168 @@
+\
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Commare — Prova (offline)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 16px; }
+    h1 { margin: 0 0 8px 0; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; margin: 12px 0; }
+    textarea { width: 100%; min-height: 120px; font-size: 16px; padding: 10px; border-radius: 10px; border: 1px solid #ccc; }
+    button { padding: 10px 12px; border-radius: 10px; border: 1px solid #ccc; background: #f7f7f7; font-size: 16px; }
+    button.primary { background: #0b5fff; color: white; border: 1px solid #0b5fff; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row > * { flex: 1; }
+    .small { color: #555; font-size: 13px; }
+    .warn { color: #b45309; font-weight: 600; }
+    .ok { color: #166534; font-weight: 600; }
+    input[type="file"] { font-size: 14px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <h1>Commare — Prova</h1>
+  <div class="small">
+    Questa versione funziona senza Mac: apri questo file in Safari e codifica testo → numeri.
+    <br>
+    Canone v1: <span class="mono">6 parole/riga</span>, <span class="mono">82 righe/pagina</span>.
+  </div>
+
+  <div class="card">
+    <div><strong>1) Carica il canone (wordlist)</strong></div>
+    <div class="small">Seleziona il file <span class="mono">italiano_canonico_wordlist_v1.txt</span> (è nello ZIP).</div>
+    <input id="fileInput" type="file" accept=".txt,text/plain" />
+    <div id="canonStatus" class="small">Stato: <span class="warn">non caricato</span></div>
+  </div>
+
+  <div class="card">
+    <div><strong>2) Scrivi o incolla il testo</strong></div>
+    <textarea id="inputText" placeholder="Scrivi qui…"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <button class="primary" id="encodeBtn">Codifica</button>
+      <button id="clearBtn">Pulisci</button>
+    </div>
+    <div id="unknownInfo" class="small" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <div><strong>3) Codice numerico</strong></div>
+    <textarea id="outputText" class="mono" placeholder="Qui compariranno i numeri…"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <button id="copyBtn">Copia</button>
+      <button id="shareBtn">Invia</button>
+    </div>
+    <div class="small" style="margin-top:8px;">
+      Se “Invia” non funziona, usa “Copia” e incolla su WhatsApp o Mail.
+    </div>
+  </div>
+
+  <div class="small">
+    Nota: parole sconosciute → <span class="mono">000-000-000</span>.
+  </div>
+
+<script>
+(() => {
+  const WORDS_PER_LINE = 6;
+  const ROWS_PER_PAGE = 82;
+  let wordToIndex = null;
+
+  const fileInput = document.getElementById('fileInput');
+  const canonStatus = document.getElementById('canonStatus');
+  const encodeBtn = document.getElementById('encodeBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const inputText = document.getElementById('inputText');
+  const outputText = document.getElementById('outputText');
+  const unknownInfo = document.getElementById('unknownInfo');
+  const copyBtn = document.getElementById('copyBtn');
+  const shareBtn = document.getElementById('shareBtn');
+
+  function setCanonStatus(ok, msg) {
+    canonStatus.innerHTML = `Stato: <span class="${ok ? 'ok' : 'warn'}">${msg}</span>`;
+  }
+
+  function tokenize(text) {
+    const lowered = (text || "").toLowerCase();
+    const cleaned = lowered.replace(/[^\p{L}\p{N}\s']/gu, " ");
+    const raw = cleaned.split(/\s+/).filter(Boolean);
+    const trimmed = raw.map(t => t.replace(/^'+|'+$/g, "")).filter(Boolean);
+    return trimmed;
+  }
+
+  function indexToCode(index) {
+    const absoluteRow = Math.floor(index / WORDS_PER_LINE);
+    const page = Math.floor(absoluteRow / ROWS_PER_PAGE) + 1;
+    const rowInPage = (absoluteRow % ROWS_PER_PAGE) + 1;
+    const posInRow = (index % WORDS_PER_LINE) + 1;
+    const pad3 = (n) => String(n).padStart(3, '0');
+    return `${pad3(page)}-${pad3(rowInPage)}-${pad3(posInRow)}`;
+  }
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      setCanonStatus(false, "caricamento…");
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.length > 0);
+      const map = new Map();
+      for (let i = 0; i < lines.length; i++) map.set(lines[i], i);
+      wordToIndex = map;
+      setCanonStatus(true, `caricato (${lines.length} parole)`);
+    } catch (err) {
+      console.error(err);
+      setCanonStatus(false, "errore nel caricamento");
+      wordToIndex = null;
+    }
+  });
+
+  encodeBtn.addEventListener('click', () => {
+    if (!wordToIndex) {
+      alert("Prima carica il file italiano_canonico_wordlist_v1.txt");
+      return;
+    }
+    const tokens = tokenize(inputText.value);
+    let unknown = 0;
+    const codes = tokens.map(t => {
+      const idx = wordToIndex.get(t);
+      if (idx === undefined) { unknown++; return "000-000-000"; }
+      return indexToCode(idx);
+    });
+    outputText.value = codes.join(" ");
+    unknownInfo.innerHTML = unknown > 0
+      ? `<span class="warn">Parole sconosciute: ${unknown}</span>`
+      : `<span class="ok">Tutte le parole trovate nel canone.</span>`;
+  });
+
+  clearBtn.addEventListener('click', () => {
+    inputText.value = "";
+    outputText.value = "";
+    unknownInfo.innerHTML = "";
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(outputText.value || "");
+      alert("Copiato!");
+    } catch {
+      outputText.focus();
+      outputText.select();
+      document.execCommand("copy");
+      alert("Copiato!");
+    }
+  });
+
+  shareBtn.addEventListener('click', async () => {
+    const txt = outputText.value || "";
+    if (!txt.trim()) return;
+    if (navigator.share) {
+      try { await navigator.share({ text: txt }); } catch (e) {}
+    } else {
+      alert("Usa 'Copia' e incolla su WhatsApp o Mail.");
+    }
+  });
+})();
+</script>
+</body>
+</html>
